@@ -92,13 +92,14 @@ static void rtc_setup()
     rcc_periph_clock_enable(RCC_RTC);
 
     pwr_disable_backup_domain_write_protect(); //Enable RTC to change
+    //rcc_periph_reset_pulse(RST_BACKUPDOMAIN);
 
-    /*Should use RCC_LSE, but results in 0 seconds all the time.*/
-    rcc_osc_on(RCC_LSI);
-    rcc_wait_for_osc_ready(RCC_LSI);
+    rcc_osc_on(RCC_LSE);
+    rcc_wait_for_osc_ready(RCC_LSE);
 
     rtc_unlock();
-    rcc_set_rtc_clock_source(RCC_LSI);
+    rcc_set_rtc_clock_source(RCC_LSE);
+    rtc_set_prescaler(255, 127);
     rcc_enable_rtc_clock();
     rtc_lock();
 }

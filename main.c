@@ -1,4 +1,7 @@
 #include <stdint.h>
+#include <ctype.h>
+#include <inttypes.h>
+#include <stdio.h>
 
 #include <FreeRTOS.h>
 #include <task.h>
@@ -7,6 +10,8 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/usart.h>
+#include <libopencm3/stm32/rtc.h>
+#include <libopencm3/stm32/pwr.h>
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/cm3/systick.h>
 
@@ -81,6 +86,23 @@ uart_setup(void) {
 }
 
 
+static void rtc_setup()
+{
+    rcc_periph_clock_enable(RCC_PWR);
+    rcc_periph_clock_enable(RCC_RTC);
+
+    pwr_disable_backup_domain_write_protect(); //Enable RTC to change
+
+    /*Should use RCC_LSE, but results in 0 seconds all the time.*/
+    rcc_osc_on(RCC_LSI);
+    rcc_wait_for_osc_ready(RCC_LSI);
+
+    rtc_unlock();
+    rcc_set_rtc_clock_source(RCC_LSI);
+    rcc_enable_rtc_clock();
+    rtc_lock();
+}
+
 static inline void
 log_msg(const char *s) {
 
@@ -140,12 +162,18 @@ blink_task(void *args __attribute((unused))) {
     gpio_mode_setup(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO5);
     for (;;) {
         gpio_toggle(GPIOA, GPIO5);
-        ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(500));
+        ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(1000));
         if (rx_ready)
         {
             log_msg(rx_buffer);
             rx_buffer_len = 0;
             rx_ready = false;
+        }
+        else
+        {
+            char buffer[32];
+            sprintf(buffer, "%"PRIu32, RTC_TR);
+            log_msg(buffer);
         }
     }
 }
@@ -154,6 +182,7 @@ blink_task(void *args __attribute((unused))) {
 int main(void) {
     rcc_clock_setup_in_hsi_out_48mhz();
     uart_setup();
+    rtc_setup();
     rcc_periph_clock_enable(RCC_GPIOA);
 
     uart_txq = xQueueCreate(4,MAX_LINELEN);
@@ -164,7 +193,7 @@ int main(void) {
     raw_log_msg("----start----");
 
     xTaskCreate(uart_task,"UART",200,NULL,configMAX_PRIORITIES-1,NULL);
-    xTaskCreate(blink_task,"LED",100,NULL,configMAX_PRIORITIES-2,&h_blinky);
+    xTaskCreate(blink_task,"LED",300,NULL,configMAX_PRIORITIES-2,&h_blinky);
 
     vTaskStartScheduler();
 

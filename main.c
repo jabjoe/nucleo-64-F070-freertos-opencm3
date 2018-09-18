@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <time.h>
 
 #include <FreeRTOS.h>
 #include <task.h>
@@ -91,18 +92,44 @@ static void rtc_setup()
     rcc_periph_clock_enable(RCC_PWR);
     rcc_periph_clock_enable(RCC_RTC);
 
-    pwr_disable_backup_domain_write_protect(); //Enable RTC to change
+    /* Enable RTC to change */
+    pwr_disable_backup_domain_write_protect();
     //rcc_periph_reset_pulse(RST_BACKUPDOMAIN);
 
     rcc_osc_on(RCC_LSE);
     rcc_wait_for_osc_ready(RCC_LSE);
-
-    rtc_unlock();
     rcc_set_rtc_clock_source(RCC_LSE);
-    rtc_set_prescaler(255, 127);
+
     rcc_enable_rtc_clock();
+
+    /* Step 1 : Disable the RTC registers write protection */
+    rtc_unlock();
+
+    /* Step 2 : Enter Initialization mode */
+    RTC_ISR |= RTC_ISR_INIT;
+    /* Step 3 : Wait for the confirmation of Initialization mode */
+    RTC_ISR &= ~RTC_ISR_INITF;
+    while(!(RTC_ISR & RTC_ISR_INITF));
+    /* Step 4 : Program the prescaler values */
+    rtc_set_prescaler(255, 127);
+
+    /* Step 5 : Load time and date values in the shadow registers */
+    RTC_TR = 0;
+    RTC_DR = 0;
+
+    /* Step 6 : Configure the time format */
+    RTC_CR &= ~RTC_CR_FMT; // 24 clock
+
+    /* Step 7 : Exit Initialization mode */
+    RTC_ISR &= ~RTC_ISR_INIT;
+
+    /* Step 8 : Enable the RTC Registers Write Protection */
     rtc_lock();
+
+    rtc_wait_for_synchro();
+    pwr_enable_backup_domain_write_protect();
 }
+
 
 static inline void
 log_msg(const char *s) {
@@ -137,8 +164,10 @@ usart2_isr(void) {
             rx_buffer[rx_buffer_len++] = 0;
             rx_ready = true;
 
-            vTaskNotifyGiveFromISR(h_blinky,&woken);
-            portYIELD_FROM_ISR(woken);
+            if (h_blinky) {
+                vTaskNotifyGiveFromISR(h_blinky,&woken);
+                portYIELD_FROM_ISR(woken);
+            }
         }
     }
 }
@@ -161,9 +190,12 @@ static void
 blink_task(void *args __attribute((unused))) {
     log_msg("blink_task");
     gpio_mode_setup(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO5);
+    unsigned count = 0;
+    unsigned seconds = 0;
     for (;;) {
         gpio_toggle(GPIOA, GPIO5);
-        ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(1000));
+        ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(100));
+        count++;
         if (rx_ready)
         {
             log_msg(rx_buffer);
@@ -172,9 +204,17 @@ blink_task(void *args __attribute((unused))) {
         }
         else
         {
-            char buffer[32];
-            sprintf(buffer, "%"PRIu32, RTC_TR);
+            char buffer[64];
+            snprintf(buffer, sizeof(buffer), "%"PRIu32" %"PRIu32" %"PRIu32, RTC_DR, RTC_TR, RTC_SSR);
             log_msg(buffer);
+            if (!(count % 10))
+            {
+                seconds++;
+                snprintf(buffer, sizeof(buffer), "--second-- %u", seconds);
+                log_msg(buffer);
+
+                count = 0;
+            }
         }
     }
 }

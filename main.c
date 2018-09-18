@@ -4,10 +4,6 @@
 #include <stdio.h>
 #include <time.h>
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <queue.h>
-
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/usart.h>
@@ -67,7 +63,7 @@ static void rtc_setup()
 
     /* Enable RTC to change */
     pwr_disable_backup_domain_write_protect();
-    //rcc_periph_reset_pulse(RST_BACKUPDOMAIN);
+    rcc_periph_reset_pulse(RST_BACKUPDOMAIN); // Wipe RTC settings
 
     rcc_osc_on(RCC_LSE);
     rcc_wait_for_osc_ready(RCC_LSE);
@@ -119,9 +115,9 @@ void sys_tick_handler(void) {
     log_msg(buffer);
 
     if (!(ticks % TICKS_PER_SECOND)) {
-        seconds++;
         snprintf(buffer, sizeof(buffer), "--second-- %u", seconds);
         log_msg(buffer);
+        seconds++;
         ticks = 0;
     }
     ticks++;

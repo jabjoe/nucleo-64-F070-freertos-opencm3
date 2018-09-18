@@ -75,6 +75,15 @@ static void encode_datetime(const struct tm* now, uint32_t * time_val, uint32_t 
 }
 
 
+static void rtc_set(struct tm* now)
+{
+    uint32_t time_reg, date_reg;
+    encode_datetime(now, &time_reg, &date_reg);
+    RTC_TR = time_reg;
+    RTC_DR = date_reg;
+}
+
+
 static void decode_datetime(const uint32_t t, const uint32_t d, struct tm* result)
 {
     result->tm_hour = (((t >> RTC_TR_HT_SHIFT) & RTC_TR_HT_MASK) * 10)
@@ -98,6 +107,13 @@ static void decode_datetime(const uint32_t t, const uint32_t d, struct tm* resul
 
     result->tm_wday = (((d >> RTC_DR_WDU_SHIFT) & 0x07 ) % 7) ;
 }
+
+
+static void rtc_get(struct tm* result)
+{
+    decode_datetime(RTC_TR, RTC_DR, result);
+}
+
 
 
 static void get_example_stamp(struct tm* now)
@@ -142,10 +158,7 @@ static void rtc_setup()
     /* Step 5 : Load time and date values in the shadow registers */
     struct tm test_time;
     get_example_stamp(&test_time);
-    uint32_t time_reg, date_reg;
-    encode_datetime(&test_time, &time_reg, &date_reg);
-    RTC_TR = time_reg;
-    RTC_DR = date_reg;
+    rtc_set(&test_time);
 
     /* Step 6 : Configure the time format */
     RTC_CR &= ~RTC_CR_FMT; // 24 clock
@@ -171,7 +184,7 @@ void sys_tick_handler(void) {
 
     char buffer[64];
     struct tm date;
-    decode_datetime(RTC_TR, RTC_DR, &date);
+    rtc_get(&date);
     snprintf(buffer, sizeof(buffer), "RTC %i/%i/%i (%i) %i:%i:%i",
         date.tm_year,
         date.tm_mon+1,

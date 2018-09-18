@@ -137,7 +137,6 @@ static void rtc_setup()
     while(!(RTC_ISR & RTC_ISR_INITF));
     /* Step 4 : Program the prescaler values */
     rtc_set_prescaler(255, 127);
-    rtc_set_prescaler(255, 127);
 
 
     /* Step 5 : Load time and date values in the shadow registers */

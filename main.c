@@ -170,14 +170,9 @@ static unsigned ticks = 0;
 void sys_tick_handler(void) {
 
     char buffer[64];
-    uint32_t time_reg = RTC_TR;
-    uint32_t date_reg = RTC_DR;
-    snprintf(buffer, sizeof(buffer), "%"PRIu32" %"PRIu32" %"PRIu32, date_reg, time_reg, RTC_SSR);
-    log_msg(buffer);
-
     struct tm date;
-    decode_datetime(time_reg, date_reg, &date);
-    snprintf(buffer, sizeof(buffer), "RTC %i/%i/%i (%i) %i:%i:%i\n",
+    decode_datetime(RTC_TR, RTC_DR, &date);
+    snprintf(buffer, sizeof(buffer), "RTC %i/%i/%i (%i) %i:%i:%i",
         date.tm_year,
         date.tm_mon+1,
         date.tm_mday,

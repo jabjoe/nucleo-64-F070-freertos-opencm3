@@ -56,6 +56,62 @@ uart_setup(void) {
 }
 
 
+static void encode_datetime(const struct tm* now, uint32_t * time_val, uint32_t * date_val)
+{
+    (*time_val)  = (((now->tm_hour / 10) & RTC_TR_HT_MASK)  << RTC_TR_HT_SHIFT)
+                 | (((now->tm_hour % 10) & RTC_TR_HU_MASK)  << RTC_TR_HU_SHIFT)
+                 | (((now->tm_min  / 10) & RTC_TR_MNT_MASK) << RTC_TR_MNT_SHIFT)
+                 | (((now->tm_min  % 10) & RTC_TR_MNU_MASK) << RTC_TR_MNU_SHIFT)
+                 | (((now->tm_sec  / 10) & RTC_TR_ST_MASK)  << RTC_TR_ST_SHIFT)
+                 | (((now->tm_sec  % 10) & RTC_TR_SU_MASK)  << RTC_TR_SU_SHIFT);
+
+    (*date_val) = (((now->tm_year / 10) & RTC_DR_YT_MASK)  << RTC_DR_YT_SHIFT)
+                | (((now->tm_year % 10) & RTC_DR_YU_MASK)  << RTC_DR_YU_SHIFT)
+                | (((now->tm_mon / 10)  & 0x01          )  << RTC_DR_MT_SHIFT)
+                | (((now->tm_mon % 10)  & RTC_DR_MU_MASK)  << RTC_DR_MU_SHIFT)
+                | (((now->tm_mday / 10) & RTC_DR_DT_MASK)  << RTC_DR_DT_SHIFT)
+                | (((now->tm_mday % 10) & RTC_DR_DU_MASK)  << RTC_DR_DU_SHIFT)
+                | (((now->tm_wday % 10) & RTC_DR_WDU_MASK) << RTC_DR_WDU_SHIFT);
+}
+
+
+static void decode_datetime(const uint32_t t, const uint32_t d, struct tm* result)
+{
+    result->tm_hour = (((t >> RTC_TR_HT_SHIFT) & RTC_TR_HT_MASK) * 10)
+                     + ((t >> RTC_TR_HU_SHIFT) & RTC_TR_HU_MASK);
+
+    result->tm_min = (((t >> RTC_TR_MNT_SHIFT) & RTC_TR_MNT_MASK) * 10)
+                    + ((t >> RTC_TR_MNU_SHIFT) & RTC_TR_MNU_MASK);
+
+    result->tm_sec = (((t >> RTC_TR_ST_SHIFT) & RTC_TR_ST_MASK) * 10)
+                    + ((t >> RTC_TR_SU_SHIFT) & RTC_TR_SU_MASK);
+
+
+    result->tm_year = (((d >> RTC_DR_YT_SHIFT) & RTC_DR_YT_MASK) * 10)
+                     + ((d >> RTC_DR_YU_SHIFT) & RTC_DR_YU_MASK);
+
+    result->tm_mon = (((d >> RTC_DR_MT_SHIFT) & 0x01) * 10)
+                    + ((d >> RTC_DR_MU_SHIFT) & RTC_DR_MU_MASK);
+
+    result->tm_mday = (((d >> RTC_DR_DT_SHIFT) & RTC_DR_DT_MASK) * 10)
+                     + ((d >> RTC_DR_DU_SHIFT) & RTC_DR_DU_MASK);
+
+    result->tm_wday = (((d >> RTC_DR_WDU_SHIFT) & 0x07 ) % 7) ;
+}
+
+
+static void get_example_stamp(struct tm* now)
+{
+    now->tm_year = 18; /* Year - 1900 */
+    now->tm_mon = 9 - 1; /* Month (0-11) */
+    now->tm_mday = 17;   /* Day of the month (1-31) */
+    now->tm_wday = 1;    /* Day of the week (0-6, Sunday = 0) */
+    now->tm_hour = 19;  /* Seconds (0-60) */
+    now->tm_min = 30;   /* Minutes (0-59) */
+    now->tm_sec = 15;    /* Seconds (0-60) */
+}
+
+
 static void rtc_setup()
 {
     rcc_periph_clock_enable(RCC_PWR);
@@ -81,10 +137,16 @@ static void rtc_setup()
     while(!(RTC_ISR & RTC_ISR_INITF));
     /* Step 4 : Program the prescaler values */
     rtc_set_prescaler(255, 127);
+    rtc_set_prescaler(255, 127);
+
 
     /* Step 5 : Load time and date values in the shadow registers */
-    RTC_TR = 0;
-    RTC_DR = 0;
+    struct tm test_time;
+    get_example_stamp(&test_time);
+    uint32_t time_reg, date_reg;
+    encode_datetime(&test_time, &time_reg, &date_reg);
+    RTC_TR = time_reg;
+    RTC_DR = date_reg;
 
     /* Step 6 : Configure the time format */
     RTC_CR &= ~RTC_CR_FMT; // 24 clock
@@ -109,9 +171,21 @@ static unsigned ticks = 0;
 void sys_tick_handler(void) {
 
     char buffer[64];
-    uint32_t time = RTC_TR;
-    uint32_t date = RTC_DR;
-    snprintf(buffer, sizeof(buffer), "%"PRIu32" %"PRIu32" %"PRIu32, date, time, RTC_SSR);
+    uint32_t time_reg = RTC_TR;
+    uint32_t date_reg = RTC_DR;
+    snprintf(buffer, sizeof(buffer), "%"PRIu32" %"PRIu32" %"PRIu32, date_reg, time_reg, RTC_SSR);
+    log_msg(buffer);
+
+    struct tm date;
+    decode_datetime(time_reg, date_reg, &date);
+    snprintf(buffer, sizeof(buffer), "RTC %i/%i/%i (%i) %i:%i:%i\n",
+        date.tm_year,
+        date.tm_mon+1,
+        date.tm_mday,
+        date.tm_wday,
+        date.tm_hour,
+        date.tm_min,
+        date.tm_sec);
     log_msg(buffer);
 
     if (!(ticks % TICKS_PER_SECOND)) {

@@ -18,50 +18,23 @@
 
 #define MAX_LINELEN 32
 
-static TaskHandle_t h_blinky = 0;
-static QueueHandle_t uart_txq;
 
-
-static char rx_buffer[MAX_LINELEN];
-static unsigned rx_buffer_len = 0;
-static bool rx_ready =false;
-
-extern void xPortPendSVHandler( void ) __attribute__ (( naked ));
-extern void xPortSysTickHandler( void );
-
-
-extern void raw_log_msg(const char * s) {
-
-    for (unsigned n = 0; *s && n < MAX_LINELEN; n++)
+static inline void
+log_msg(const char *s) {
+    while(*s)
         usart_send_blocking(USART2, *s++);
 
     usart_send_blocking(USART2, '\n');
     usart_send_blocking(USART2, '\r');
 }
 
-void
-vApplicationStackOverflowHook(xTaskHandle *pxTask,signed portCHAR *pcTaskName) {
-    (void)pxTask;
-    (void)pcTaskName;
-    raw_log_msg("----big fat FreeRTOS crash -----");
-    while(true);
-}
-
 
 void hard_fault_handler(void)
 {
-    raw_log_msg("----big fat libopen3 crash -----");
+    log_msg("----big fat libopencm3 crash -----");
     while(true);
 }
 
-
-void pend_sv_handler(void) {
-    xPortPendSVHandler();
-}
-
-void sys_tick_handler(void) {
-    xPortSysTickHandler();
-}
 
 static void
 uart_setup(void) {
@@ -131,92 +104,40 @@ static void rtc_setup()
 }
 
 
-static inline void
-log_msg(const char *s) {
+static unsigned seconds = 0;
+static unsigned ticks = 0;
 
-    char tmp[MAX_LINELEN];
+#define TICKS_PER_SECOND 10
 
-    for (unsigned n = 0; n < MAX_LINELEN; n++) {
-        if (*s)
-            tmp[n] = *s++;
-        else {
-            tmp[n] = 0;
-            break;
-        }
+
+void sys_tick_handler(void) {
+
+    char buffer[64];
+    uint32_t time = RTC_TR;
+    uint32_t date = RTC_DR;
+    snprintf(buffer, sizeof(buffer), "%"PRIu32" %"PRIu32" %"PRIu32, date, time, RTC_SSR);
+    log_msg(buffer);
+
+    if (!(ticks % TICKS_PER_SECOND)) {
+        seconds++;
+        snprintf(buffer, sizeof(buffer), "--second-- %u", seconds);
+        log_msg(buffer);
+        ticks = 0;
     }
+    ticks++;
 
-    xQueueSend(uart_txq, tmp, portMAX_DELAY);
 }
 
 
-void
-usart2_isr(void) {
-    BaseType_t woken = pdFALSE;
-    usart_wait_recv_ready(USART2);
+static void systick_setup()
+{
+    systick_set_clocksource(STK_CSR_CLKSOURCE_EXT);
+    STK_CVR = 0;
 
-    char c = usart_recv(USART2);
+    int xms = 1000 / TICKS_PER_SECOND;
 
-    if (!rx_ready) {
-        if (c != '\n' && c != '\r' && rx_buffer_len < MAX_LINELEN - 1) {
-            rx_buffer[rx_buffer_len++] = c;
-        }
-        else {
-            rx_buffer[rx_buffer_len++] = 0;
-            rx_ready = true;
-
-            if (h_blinky) {
-                vTaskNotifyGiveFromISR(h_blinky,&woken);
-                portYIELD_FROM_ISR(woken);
-            }
-        }
-    }
-}
-
-
-
-static void
-uart_task(void *args __attribute((unused))) {
-    log_msg("uart_task");
-    for(;;) {
-        char tmp[MAX_LINELEN];
-        if ( xQueueReceive(uart_txq, tmp, portMAX_DELAY) == pdPASS ) {
-            raw_log_msg(tmp);
-        }
-    }
-}
-
-
-static void
-blink_task(void *args __attribute((unused))) {
-    log_msg("blink_task");
-    gpio_mode_setup(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO5);
-    unsigned count = 0;
-    unsigned seconds = 0;
-    for (;;) {
-        gpio_toggle(GPIOA, GPIO5);
-        ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(100));
-        count++;
-        if (rx_ready)
-        {
-            log_msg(rx_buffer);
-            rx_buffer_len = 0;
-            rx_ready = false;
-        }
-        else
-        {
-            char buffer[64];
-            snprintf(buffer, sizeof(buffer), "%"PRIu32" %"PRIu32" %"PRIu32, RTC_DR, RTC_TR, RTC_SSR);
-            log_msg(buffer);
-            if (!(count % 10))
-            {
-                seconds++;
-                snprintf(buffer, sizeof(buffer), "--second-- %u", seconds);
-                log_msg(buffer);
-
-                count = 0;
-            }
-        }
-    }
+    systick_set_reload(rcc_ahb_frequency / 8 / 1000 * xms);
+    systick_counter_enable();
 }
 
 
@@ -225,18 +146,12 @@ int main(void) {
     uart_setup();
     rtc_setup();
     rcc_periph_clock_enable(RCC_GPIOA);
+    systick_setup();
 
-    uart_txq = xQueueCreate(4,MAX_LINELEN);
-
+    log_msg("----start----");
     systick_interrupt_enable();
-    systick_counter_enable();
 
-    raw_log_msg("----start----");
-
-    xTaskCreate(uart_task,"UART",200,NULL,configMAX_PRIORITIES-1,NULL);
-    xTaskCreate(blink_task,"LED",300,NULL,configMAX_PRIORITIES-2,&h_blinky);
-
-    vTaskStartScheduler();
+    while(true);
 
     return 0;
 }

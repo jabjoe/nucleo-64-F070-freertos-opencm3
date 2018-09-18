@@ -119,9 +119,9 @@ static void rtc_get(struct tm* result)
 static void get_example_stamp(struct tm* now)
 {
     now->tm_year = 118; /* Year - 1900 */
-    now->tm_mon = 9 - 1; /* Month (0-11) */
-    now->tm_mday = 17;   /* Day of the month (1-31) */
-    now->tm_wday = 1;    /* Day of the week (0-6, Sunday = 0) */
+    now->tm_mon = 12;   /* Month (1-12) */
+    now->tm_mday = 31;  /* Day of the month (1-31) */
+    now->tm_wday = 1;   /* Day of the week (0-6, Sunday = 0) */
     now->tm_hour = 23;  /* Seconds (0-60) */
     now->tm_min = 59;   /* Minutes (0-59) */
     now->tm_sec = 0;    /* Seconds (0-60) */
@@ -187,7 +187,7 @@ void sys_tick_handler(void) {
     rtc_get(&date);
     snprintf(buffer, sizeof(buffer), "RTC %04i/%02i/%02i (%i) %02i:%02i:%02i",
         date.tm_year+1900,
-        date.tm_mon+1,
+        date.tm_mon,
         date.tm_mday,
         date.tm_wday,
         date.tm_hour,

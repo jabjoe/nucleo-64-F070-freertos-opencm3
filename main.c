@@ -40,7 +40,7 @@ uart_setup(void) {
     gpio_mode_setup( GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO2 | GPIO3 );
     gpio_set_af( GPIOA, GPIO_AF7, GPIO2 | GPIO3 );
 
-    usart_set_baudrate( USART2, 102400 ); // 115200 / (72MHZ / 64MHZ)
+    usart_set_baudrate( USART2, 115200 );
     usart_set_databits( USART2, 8 );
     usart_set_stopbits( USART2, USART_CR2_STOPBITS_1 );
     usart_set_mode( USART2, USART_MODE_TX );
